@@ -115,8 +115,13 @@ int ShackHands(char *file_name, FILE **fp)
 }
 
 int FileReceive(FILE **fp) {
-    int rvwd = 64; // Static
+    int rvwd = 32; // Static
     int recvfile = 0, FileNotEnd = 1, Nid = 0;
+    /*int bufsize = 0, nu = sizeof(int);
+    getsockopt(client_socket, SOL_SOCKET, SO_RCVBUF,&bufsize, &nu);
+    printf("bufsize:%d\n",bufsize);
+    return 0;
+    */
     while(FileNotEnd)
     {
         int i;

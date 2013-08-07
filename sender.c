@@ -12,7 +12,7 @@
 #define SERVER_PORT 5155
 #define BUFFER_SIZE 512 
 #define FILE_NAME_MAX_SIZE 512
-#define MAX_WINDOW_SIZE 256 
+#define MAX_WINDOW_SIZE 128 
 
 typedef struct
 {
@@ -152,7 +152,7 @@ int Transfer(FILE **fp)
                 }
             }
             int timeo = -1;
-            while ( (timeo = readable_timeo(server_socket, 0, 5000) > 0) && (recvack < cnwd))
+            while ( (timeo = readable_timeo(server_socket, 0,500000) > 0) && (recvack < cnwd))
             {
                 Packet ack;
                 Recvfrom((char *)&ack, sizeof(Packet));
