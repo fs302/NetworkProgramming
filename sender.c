@@ -12,7 +12,7 @@
 #define SERVER_PORT 5155
 #define BUFFER_SIZE 512 
 #define FILE_NAME_MAX_SIZE 512
-#define MAX_WINDOW_SIZE 256
+#define MAX_WINDOW_SIZE 256 
 
 typedef struct
 {
@@ -67,7 +67,7 @@ int Recvfrom(char *buffer, int length)
     return 0;
 }
 
-int WaitShackHands(char *file_name, FILE *fp)
+int WaitShackHands(char *file_name, FILE **fp)
 {
     printf("Waiting request ...\n");
     Packet fnpack;
@@ -76,8 +76,8 @@ int WaitShackHands(char *file_name, FILE *fp)
     if (fnpack.dataID == -1)
         strncpy(file_name, fnpack.data, fnpack.dataLength>FILE_NAME_MAX_SIZE?FILE_NAME_MAX_SIZE:fnpack.dataLength);
     printf("File name: %s\n",file_name);
-    fp = fopen(file_name, "rb");
-    if (NULL == fp)
+    *fp = fopen(file_name, "rb");
+    if (NULL == *fp)
     {
         printf("File:\t %s is not found.\n",file_name);
         fnpack.dataID = -2;
@@ -90,7 +90,7 @@ int WaitShackHands(char *file_name, FILE *fp)
     return 1;
 }
 
-int readable_timeo(int fd, int sec)
+int readable_timeo(int fd, int sec, int usec)
 {
     fd_set rset;
     struct timeval tv;
@@ -99,24 +99,26 @@ int readable_timeo(int fd, int sec)
     FD_SET(fd, &rset);
 
     tv.tv_sec = sec;
-    tv.tv_usec = 0;
+    tv.tv_usec = usec;
 
     return(select(fd+1, &rset, NULL, NULL, &tv));
         /* >0 if descriptor is readable*/
 }
 
-int Transfer(FILE *fp)
+int Transfer(FILE **fp)
 {
     int cnwd = 1; // Initialize the sending window size
     int recvack = 0, FileNotEnd = 1, file_block_length = 0, Nid = 0;
     char buffer[BUFFER_SIZE];
+    printf("Begin transfer.\n");
     while(FileNotEnd)
     {
         int i;
+        int losepack = 0;
         for(i = 0;i < cnwd;i++)
         {
             bzero(buffer, BUFFER_SIZE);
-            file_block_length = fread(buffer, sizeof(char), BUFFER_SIZE, fp);
+            file_block_length = fread(buffer, sizeof(char), BUFFER_SIZE, *fp);
             if (file_block_length < 0){
                 printf("Read file buffer error.\n");
                 return -1;
@@ -124,7 +126,13 @@ int Transfer(FILE *fp)
             else if (file_block_length == 0){
                 FileNotEnd = 0;
                 printf("File End.\n");
-                cnwd = i;
+                Packet EndSig;
+                EndSig.dataID = Nid++;
+                strncpy(EndSig.data, "*EOF*", 5);
+                EndSig.dataLength = strlen(EndSig.data);
+                EndSig.flag = 0;
+                sendWindow[i] = EndSig;
+                cnwd = i+1;
                 break;
             }
             Packet Contentpack;
@@ -138,20 +146,31 @@ int Transfer(FILE *fp)
         {
             for(i = 0;i < cnwd;i++)
             {
-                if (sendWindow[i].flag == 0)
+                if (sendWindow[i].flag == 0){
                     Sendto((char *)&sendWindow[i], sizeof(Packet));
+                    printf("Sending ID:%d\n",sendWindow[i].dataID);
+                }
             }
-            while ( readable_timeo(server_socket, 5) > 0 && (recvack < cnwd))
+            int timeo = -1;
+            while ( (timeo = readable_timeo(server_socket, 0, 5000) > 0) && (recvack < cnwd))
             {
                 Packet ack;
                 Recvfrom((char *)&ack, sizeof(Packet));
                 for(i = 0;i < cnwd;i++)
-                    if (sendWindow[i].dataID == ack.dataID){
+                    if ( (sendWindow[i].dataID == ack.dataID) && (sendWindow[i].flag==0) ){
                         sendWindow[i].flag = -1;
+                        printf("Recv ACK:%d\n",sendWindow[i].dataID);
                         recvack++;
-                    }
+                        }
             }
+            if ( (timeo <= 0) && (recvack<cnwd) )
+                losepack = 1;
         }
+        if (losepack==0 && cnwd<MAX_WINDOW_SIZE)
+            cnwd *= 2;
+        else if (losepack==1 && cnwd>1)
+            cnwd = 1;
+
         recvack = 0;
     }
     return 0;
@@ -162,13 +181,13 @@ int main(int argc, char *argv[])
     for(;;)
     {
         char file_name[FILE_NAME_MAX_SIZE+1];
-        FILE *fp;
-        if ( WaitShackHands(file_name, fp) )
+        FILE *fp = NULL;
+        if ( WaitShackHands(file_name, &fp)>0 )
         {
             Packet req;
             Recvfrom((char *)&req, sizeof(Packet));
             if ( req.dataID == 0 && req.flag ==-1)
-                Transfer(fp);
+                Transfer(&fp);
         }
     }
     return 0;
