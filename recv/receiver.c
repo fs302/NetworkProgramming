@@ -7,11 +7,11 @@
 #include <string.h>      // for bzero
 #include <time.h>
 
-#define SERVER_PORT 5155 
+#define SERVER_PORT 6001 
 #define CLIENT_PORT 6155
 #define BUFFER_SIZE 512 
 #define FILE_NAME_MAX_SIZE 512
-#define MAX_PACKET_NUM 512
+#define MAX_PACKET_NUM 128
 #define IP "127.0.0.1"
 
 typedef struct
@@ -24,14 +24,14 @@ typedef struct
 int client_socket;
 struct sockaddr_in server_addr, client_addr;
 socklen_t slen = sizeof(server_addr);
-Packet recvWindow[MAX_PACKET_NUM];
+Packet recvWindow[MAX_PACKET_NUM+1];
 
 int initConnection()
 {
     bzero(&client_addr, sizeof(client_addr));
     client_addr.sin_family = AF_INET;
     client_addr.sin_addr.s_addr = htons(INADDR_ANY);
-    client_addr.sin_port = htons(CLIENT_PORT);
+    client_addr.sin_port = htons(CLIENT_PORT); // CLIENT_PORT 5155
     
     client_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (client_socket < 0) {
@@ -87,6 +87,7 @@ int readable_timeo(int fd, int sec)
 
 int ShackHands(char *file_name, FILE **fp)
 {
+    // Fill in file name to filenamePacket
     Packet fnpack;
     fnpack.dataID = -1;
     strncpy(fnpack.data, file_name, strlen(file_name));
@@ -115,7 +116,7 @@ int ShackHands(char *file_name, FILE **fp)
 }
 
 int FileReceive(FILE **fp) {
-    int rvwd = 32; // Static
+    int rvwd = 64; // Static
     int recvfile = 0, FileNotEnd = 1, Nid = 0;
     /*int bufsize = 0, nu = sizeof(int);
     getsockopt(client_socket, SOL_SOCKET, SO_RCVBUF,&bufsize, &nu);
@@ -127,6 +128,7 @@ int FileReceive(FILE **fp) {
         int i;
         for(i=0;i<rvwd;i++)
             bzero(&recvWindow[i], sizeof(Packet));
+        // Recv packet whose ID in [Nid,Nid+rvwd-1]
         while( (recvfile < rvwd) && (readable_timeo(client_socket, 5)>0) )
         {
            Packet Contentpack; 
@@ -134,30 +136,33 @@ int FileReceive(FILE **fp) {
            if (Contentpack.dataID>=Nid && Contentpack.dataID < Nid+rvwd){
                Contentpack.flag = -1;
                Sendto((char *)&Contentpack, sizeof(Packet));
-           }
-           int newflag = 1;
-           for(i=0;i<recvfile;i++)
-           {
-                if (Contentpack.dataID==recvWindow[i].dataID)
-                    newflag = 0;
-           }
-           if (newflag)
-           {
-               printf("New pack:%d\n",Contentpack.dataID);
-               if (strncmp(Contentpack.data, "*EOF*", 5) == 0){
-                   FileNotEnd = 0;
-                   rvwd = recvfile;
-                   break;
+               int newflag = 1;
+               for(i=0;i<recvfile;i++)
+               {
+                   if (Contentpack.dataID==recvWindow[i].dataID){
+                       newflag = 0;
+                       break;
+                   }
                }
-               recvWindow[recvfile++] = Contentpack;
+               if (newflag)
+               {
+                   //printf("New pack:%d\n",Contentpack.dataID);
+                   if (strncmp(Contentpack.data, "*EOF*", 5) == 0){
+                       FileNotEnd = 0;
+                       rvwd = recvfile;
+                       break;
+                   }
+                   recvWindow[recvfile++] = Contentpack;
+               }
            }
         }
+        // Write Packet data
         int id = Nid;
         for(id = Nid;id < Nid+rvwd;id++)
         {
             for(i=0;i<rvwd;i++)
             {
-                if ( (recvWindow[i].dataID == id) && (recvWindow[i].flag==-1) ){
+                if ( (recvWindow[i].dataID == id) && (recvWindow[i].flag!=1) ){
                     int write_len = fwrite(recvWindow[i].data, sizeof(char), recvWindow[i].dataLength, *fp);
                     if (write_len < recvWindow[i].dataLength){
                         printf("Write failed.\n");
@@ -186,9 +191,13 @@ int main(int argc, char *argv[])
     FILE *fp = NULL;
     if (ShackHands(file_name, &fp)>0){
         printf("Receving...\n"); 
+        clock_t start = clock();
         FileReceive(&fp);
         fclose(fp);
+        clock_t finish = clock();
         printf("Receive File:\t %s From Server [%s] Finished.\n", file_name, IP);
+        double duaration = (double)(finish-start)/CLOCKS_PER_SEC;
+        printf("Duration: %.3lf sec\n",duaration);
     }
     
     return 0;

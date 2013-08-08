@@ -31,7 +31,7 @@ int initConnection()
     bzero(&server_addr, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htons(INADDR_ANY);
-    server_addr.sin_port = htons(SERVER_PORT);
+    server_addr.sin_port = htons(SERVER_PORT); // SERVER_PORT 5155
 
     server_socket = socket(PF_INET, SOCK_DGRAM, 0);
     if (server_socket < 0)
@@ -115,6 +115,7 @@ int Transfer(FILE **fp)
     {
         int i;
         int losepack = 0;
+        // Step1: Fill in Packets
         for(i = 0;i < cnwd;i++)
         {
             bzero(buffer, BUFFER_SIZE);
@@ -125,7 +126,6 @@ int Transfer(FILE **fp)
             }
             else if (file_block_length == 0){
                 FileNotEnd = 0;
-                printf("File End.\n");
                 Packet EndSig;
                 EndSig.dataID = Nid++;
                 strncpy(EndSig.data, "*EOF*", 5);
@@ -142,29 +142,34 @@ int Transfer(FILE **fp)
             memcpy(Contentpack.data, buffer, BUFFER_SIZE);
             sendWindow[i] = Contentpack;
         }
+        // Step2: Sending & Recv ack
         while(recvack<cnwd)
         {
             for(i = 0;i < cnwd;i++)
             {
                 if (sendWindow[i].flag == 0){
                     Sendto((char *)&sendWindow[i], sizeof(Packet));
-                    printf("Sending ID:%d\n",sendWindow[i].dataID);
+                    //printf("Sending ID:%d\n",sendWindow[i].dataID);
                 }
             }
             int timeo = -1;
-            while ( (timeo = readable_timeo(server_socket, 0,500000) > 0) && (recvack < cnwd))
+            while ( (timeo = readable_timeo(server_socket, 0, 50000) > 0) && (recvack < cnwd))
             {
                 Packet ack;
                 Recvfrom((char *)&ack, sizeof(Packet));
                 for(i = 0;i < cnwd;i++)
                     if ( (sendWindow[i].dataID == ack.dataID) && (sendWindow[i].flag==0) ){
                         sendWindow[i].flag = -1;
-                        printf("Recv ACK:%d\n",sendWindow[i].dataID);
+                        //printf("Recv ACK:%d\n",sendWindow[i].dataID);
                         recvack++;
+                        break;
                         }
             }
             if ( (timeo <= 0) && (recvack<cnwd) )
+            {
+                printf("Losepack happend.\n");
                 losepack = 1;
+            }
         }
         if (losepack==0 && cnwd<MAX_WINDOW_SIZE)
             cnwd *= 2;
@@ -188,6 +193,7 @@ int main(int argc, char *argv[])
             Recvfrom((char *)&req, sizeof(Packet));
             if ( req.dataID == 0 && req.flag ==-1)
                 Transfer(&fp);
+            printf("Transfer finished.\n");
         }
     }
     return 0;
