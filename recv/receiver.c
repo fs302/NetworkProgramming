@@ -11,7 +11,7 @@
 #define CLIENT_PORT 6155
 #define BUFFER_SIZE 512 
 #define FILE_NAME_MAX_SIZE 512
-#define MAX_PACKET_NUM 128
+#define MAX_PACKET_NUM 256
 #define IP "127.0.0.1"
 
 typedef struct
@@ -118,11 +118,6 @@ int ShackHands(char *file_name, FILE **fp)
 int FileReceive(FILE **fp) {
     int rvwd = 64; // Static
     int recvfile = 0, FileNotEnd = 1, Nid = 0;
-    /*int bufsize = 0, nu = sizeof(int);
-    getsockopt(client_socket, SOL_SOCKET, SO_RCVBUF,&bufsize, &nu);
-    printf("bufsize:%d\n",bufsize);
-    return 0;
-    */
     while(FileNotEnd)
     {
         int i;
@@ -131,11 +126,13 @@ int FileReceive(FILE **fp) {
         // Recv packet whose ID in [Nid,Nid+rvwd-1]
         while( (recvfile < rvwd) && (readable_timeo(client_socket, 5)>0) )
         {
-           Packet Contentpack; 
+           Packet Contentpack, ack; 
            Recvfrom((char *)&Contentpack, sizeof(Packet));
            if (Contentpack.dataID>=Nid && Contentpack.dataID < Nid+rvwd){
-               Contentpack.flag = -1;
-               Sendto((char *)&Contentpack, sizeof(Packet));
+               bzero(&ack,sizeof(Packet));
+               ack.dataID = Contentpack.dataID + 1;
+               ack.flag = -1;
+               Sendto((char *)&ack, sizeof(Packet));
                int newflag = 1;
                for(i=0;i<recvfile;i++)
                {
@@ -146,7 +143,7 @@ int FileReceive(FILE **fp) {
                }
                if (newflag)
                {
-                   //printf("New pack:%d\n",Contentpack.dataID);
+                   printf("New pack:%d\n",Contentpack.dataID);
                    if (strncmp(Contentpack.data, "*EOF*", 5) == 0){
                        FileNotEnd = 0;
                        rvwd = recvfile;
@@ -154,6 +151,12 @@ int FileReceive(FILE **fp) {
                    }
                    recvWindow[recvfile++] = Contentpack;
                }
+           }
+           else if (Contentpack.dataID<Nid){
+               bzero(&ack,sizeof(Packet));
+               ack.dataID = Contentpack.dataID + 1;
+               ack.flag = -1;
+               Sendto((char *)&ack, sizeof(Packet)); // for the losing ack, retransmit.
            }
         }
         // Write Packet data
@@ -196,8 +199,8 @@ int main(int argc, char *argv[])
         fclose(fp);
         clock_t finish = clock();
         printf("Receive File:\t %s From Server [%s] Finished.\n", file_name, IP);
-        double duaration = (double)(finish-start)/CLOCKS_PER_SEC;
-        printf("Duration: %.3lf sec\n",duaration);
+        double duration = (double)(finish-start)/CLOCKS_PER_SEC;
+        printf("Duration: %.3lf sec\n",duration);
     }
     
     return 0;

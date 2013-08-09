@@ -12,7 +12,7 @@
 #define SERVER_PORT 5155
 #define BUFFER_SIZE 512 
 #define FILE_NAME_MAX_SIZE 512
-#define MAX_WINDOW_SIZE 128 
+#define MAX_WINDOW_SIZE 224 
 
 typedef struct
 {
@@ -25,6 +25,11 @@ int server_socket;
 struct sockaddr_in server_addr, client_addr;
 socklen_t clen = sizeof(client_addr);
 Packet sendWindow[MAX_WINDOW_SIZE];
+
+int max(int a, int b)
+{
+    return a?b>a:b;
+}
 
 int initConnection()
 {
@@ -143,40 +148,46 @@ int Transfer(FILE **fp)
             sendWindow[i] = Contentpack;
         }
         // Step2: Sending & Recv ack
+        recvack = 0;
+        int MaxACK = 0;
         while(recvack<cnwd)
         {
+            printf("Sending %d packets.\n",cnwd);
             for(i = 0;i < cnwd;i++)
             {
                 if (sendWindow[i].flag == 0){
                     Sendto((char *)&sendWindow[i], sizeof(Packet));
-                    //printf("Sending ID:%d\n",sendWindow[i].dataID);
+                    if (losepack==1)
+                        printf("reSending ID:%d\n",sendWindow[i].dataID);
                 }
             }
             int timeo = -1;
-            while ( (timeo = readable_timeo(server_socket, 0, 50000) > 0) && (recvack < cnwd))
+            while ( (recvack < cnwd) && (timeo = readable_timeo(server_socket, 0, 500120) > 0) ) 
             {
                 Packet ack;
                 Recvfrom((char *)&ack, sizeof(Packet));
+                MaxACK = max(MaxACK, ack.dataID); // Follow receiver's feedback
                 for(i = 0;i < cnwd;i++)
-                    if ( (sendWindow[i].dataID == ack.dataID) && (sendWindow[i].flag==0) ){
+                    if ( (sendWindow[i].dataID+1 == ack.dataID) && (sendWindow[i].flag==0) ){
                         sendWindow[i].flag = -1;
                         //printf("Recv ACK:%d\n",sendWindow[i].dataID);
                         recvack++;
                         break;
                         }
+                
             }
             if ( (timeo <= 0) && (recvack<cnwd) )
             {
-                printf("Losepack happend.\n");
+                printf("Losepack.\n");
                 losepack = 1;
             }
         }
-        if (losepack==0 && cnwd<MAX_WINDOW_SIZE)
+        if (losepack==0 && cnwd*2<=MAX_WINDOW_SIZE)
             cnwd *= 2;
         else if (losepack==1 && cnwd>1)
             cnwd = 1;
+            
 
-        recvack = 0;
     }
     return 0;
 }
