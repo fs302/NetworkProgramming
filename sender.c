@@ -86,11 +86,15 @@ int WaitShackHands(char *file_name, FILE **fp)
     {
         printf("File:\t %s is not found.\n",file_name);
         fnpack.dataID = -2;
+        fnpack.dataLength = 0;
+        strncpy(fnpack.data, NULL, 0);
         Sendto((char *)&fnpack, sizeof(Packet));
         return -2;
     }
     printf("File:\t %s Open.\n",file_name);
     fnpack.dataID = -1;
+    fnpack.dataLength = 0;
+    strncpy(fnpack.data, NULL, 0);
     Sendto((char *)&fnpack, sizeof(Packet));
     return 1;
 }
@@ -115,6 +119,7 @@ int Transfer(FILE **fp)
     int cnwd = 1; // Initialize the sending window size
     int recvack = 0, FileNotEnd = 1, file_block_length = 0, Nid = 0;
     char buffer[BUFFER_SIZE];
+    int reSendNum = 0;
     printf("Begin transfer.\n");
     while(FileNotEnd)
     {
@@ -153,12 +158,15 @@ int Transfer(FILE **fp)
         while(recvack<cnwd)
         {
             printf("Sending %d packets.\n",cnwd);
+            
             for(i = 0;i < cnwd;i++)
             {
                 if (sendWindow[i].flag == 0){
                     Sendto((char *)&sendWindow[i], sizeof(Packet));
                     if (losepack==1)
-                        printf("reSending ID:%d\n",sendWindow[i].dataID);
+                        reSendNum++;
+                        //printf("reSending ID:%d\n",sendWindow[i].dataID);
+                        
                 }
             }
             int timeo = -1;
@@ -179,16 +187,18 @@ int Transfer(FILE **fp)
             if ( (timeo <= 0) && (recvack<cnwd) )
             {
                 printf("Losepack.\n");
+                //reTransmit(&sendWindow,cnwd);
                 losepack = 1;
             }
         }
+       
         if (losepack==0 && cnwd*2<=MAX_WINDOW_SIZE)
-            cnwd *= 2;
+            cnwd += 1;
         else if (losepack==1 && cnwd>1)
-            cnwd = 1;
-            
-
+            cnwd /= 2;
+        
     }
+    printf("ReSend %d times.\n",reSendNum);
     return 0;
 }
 int main(int argc, char *argv[])

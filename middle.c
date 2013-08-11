@@ -33,7 +33,8 @@ int s_socket, c_socket;
 struct sockaddr_in s_addr,server_addr;
 struct sockaddr_in c_addr,client_addr;
 socklen_t cn = sizeof(client_addr), sn = sizeof(server_addr);
-int toC_Buf,toS_Buf;
+int toC_Buf, toS_Buf, BandtoC, BandtoS, Ci, Si, maxi;
+int BC[255] ,BS[255];
 
 int max(int a, int b)
 {
@@ -143,19 +144,29 @@ int SetTimer(int sec)
 
 int main(int argc, char *argv[])
 {
-    int maxfdp1;
+    int i,maxfdp1;
     fd_set readfd;
     struct timeval timeout;
     timeout.tv_sec = 0;
     timeout.tv_usec = 50000;
-    clock_t Ntime,Ptime;
+    struct timeval Ntime,Ptime;
 
     srand((unsigned)time(NULL));
     initConnection();
-    Ntime = clock();
+    gettimeofday(&Ntime,NULL);
     Ptime = Ntime;
     toC_Buf = 0;
     toS_Buf = 0;
+    Ci = 0;
+    Si = 0;
+    freopen("Bandwidth.txt","r",stdin);
+    scanf("%d",&maxi);
+    for(i = 0;i < maxi;i++)
+    {
+        scanf("%d",&BC[i]);
+        BS[i] = BC[i];
+    }
+    freopen("CON","r",stdin);
     while(1)
     {
         int ret;
@@ -174,14 +185,12 @@ int main(int argc, char *argv[])
                 printf("Receive Data from client failed.\n");
                 break;
             }
-            int newz = toS_Buf+sizeof(Packet);
-            if (newz<=BAND_WIDTH)
+            int newz = toS_Buf+pack.dataLength;
+            if (newz<=BandtoS)
             {
                 sendtoS((char *)&pack, sizeof(Packet));
                 toS_Buf = newz;
             }
-            else
-                printf("%d\n",newz);
         }
         if(FD_ISSET(s_socket, &readfd))
         {
@@ -192,21 +201,24 @@ int main(int argc, char *argv[])
                 printf("Server Recieve Data Failed!\n");
                 break;
             }
-            int newz = toC_Buf+sizeof(Packet);
-            if (newz <= BAND_WIDTH)
+            int newz = toC_Buf+pack.dataLength;
+            if (newz <= BandtoC)
             {
                 sendtoC((char *)&pack, sizeof(Packet));
                 toC_Buf = newz; 
             }
-            else
-                printf("%d\n",newz);
         }
-        Ntime = clock();
-        if ((double)(Ntime-Ptime)/CLOCKS_PER_SEC-1.0 > 0)
+        gettimeofday(&Ntime,NULL);
+        if ((double)((Ntime.tv_sec-Ptime.tv_sec)*1000000.0+Ntime.tv_usec-Ptime.tv_usec)/1000000.0-1.0 > 0)
         {
             Ptime = Ntime;
             toC_Buf = 0;
             toS_Buf = 0;
+            Ci = (Ci+1)%maxi;
+            BandtoC = BC[Ci];
+            Si = (Si+1)%maxi; 
+            BandtoS = BS[Si];
+            printf("%d\n",BandtoS);
         }
     }
 

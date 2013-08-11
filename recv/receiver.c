@@ -109,6 +109,8 @@ int ShackHands(char *file_name, FILE **fp)
             printf("File:\t %s can not open to write.\n",file_name);exit(1);
         }
         ack.dataID = 0;
+        ack.dataLength = 0;
+        strncpy(ack.data, NULL, 0);
         ack.flag = -1;
         Sendto((char *)&ack, sizeof(Packet));
     }
@@ -117,21 +119,37 @@ int ShackHands(char *file_name, FILE **fp)
 
 int FileReceive(FILE **fp) {
     int rvwd = 64; // Static
-    int recvfile = 0, FileNotEnd = 1, Nid = 0;
+    int recvfile = 0, FileNotEnd = 1, Nid = 0, RecvBuf = 0;
+    struct timeval Ntime,Ptime;
+
+    gettimeofday(&Ntime,NULL);
+    Ptime = Ntime;
+    freopen("RecvStat.txt","w",stdout);
     while(FileNotEnd)
     {
         int i;
         for(i=0;i<rvwd;i++)
             bzero(&recvWindow[i], sizeof(Packet));
         // Recv packet whose ID in [Nid,Nid+rvwd-1]
+        
         while( (recvfile < rvwd) && (readable_timeo(client_socket, 5)>0) )
         {
            Packet Contentpack, ack; 
            Recvfrom((char *)&Contentpack, sizeof(Packet));
+           RecvBuf += Contentpack.dataLength;
+           gettimeofday(&Ntime,NULL);
+           double duration =(double)((Ntime.tv_sec-Ptime.tv_sec)*1000000.0+Ntime.tv_usec-Ptime.tv_usec)/1000000.0; 
+           if (duration-1.0 > 0){
+               Ptime = Ntime;
+               printf("%d\n",RecvBuf);
+               RecvBuf = 0;
+           }
            if (Contentpack.dataID>=Nid && Contentpack.dataID < Nid+rvwd){
                bzero(&ack,sizeof(Packet));
                ack.dataID = Contentpack.dataID + 1;
                ack.flag = -1;
+               ack.dataLength = 0;
+               strncpy(ack.data, NULL, 0);
                Sendto((char *)&ack, sizeof(Packet));
                int newflag = 1;
                for(i=0;i<recvfile;i++)
@@ -143,7 +161,7 @@ int FileReceive(FILE **fp) {
                }
                if (newflag)
                {
-                   printf("New pack:%d\n",Contentpack.dataID);
+                   //printf("New pack:%d\n",Contentpack.dataID);
                    if (strncmp(Contentpack.data, "*EOF*", 5) == 0){
                        FileNotEnd = 0;
                        rvwd = recvfile;
@@ -156,6 +174,8 @@ int FileReceive(FILE **fp) {
                bzero(&ack,sizeof(Packet));
                ack.dataID = Contentpack.dataID + 1;
                ack.flag = -1;
+               ack.dataLength = 0;
+               strncpy(ack.data, NULL, 0);
                Sendto((char *)&ack, sizeof(Packet)); // for the losing ack, retransmit.
            }
         }
@@ -188,18 +208,20 @@ int main(int argc, char *argv[])
     
     char file_name[FILE_NAME_MAX_SIZE+1];
     bzero(file_name, FILE_NAME_MAX_SIZE+1);
-    printf("Please input File Name on Server: ");
-    scanf("%s",file_name);
-
+    printf("Please input File Name on Server: Bible.txt\n");
+    //scanf("%s",file_name);
+    strncpy(file_name,"Bible.txt",strlen("Bible.txt"));
     FILE *fp = NULL;
     if (ShackHands(file_name, &fp)>0){
         printf("Receving...\n"); 
-        clock_t start = clock();
+        struct timeval start,finish;
+        gettimeofday(&start,NULL);
         FileReceive(&fp);
         fclose(fp);
-        clock_t finish = clock();
+        gettimeofday(&finish,NULL);
+        freopen("/dev/tty","w",stdout);
         printf("Receive File:\t %s From Server [%s] Finished.\n", file_name, IP);
-        double duration = (double)(finish-start)/CLOCKS_PER_SEC;
+        double duration = (double)((finish.tv_sec-start.tv_sec)*1000000.0+finish.tv_usec-start.tv_usec)/1000000.0;
         printf("Duration: %.3lf sec\n",duration);
     }
     
