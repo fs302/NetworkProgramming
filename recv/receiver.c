@@ -13,6 +13,7 @@
 #define FILE_NAME_MAX_SIZE 512
 #define MAX_PACKET_NUM 256
 #define IP "127.0.0.1"
+#define DEFAULT_FILE "1.mp4"
 
 typedef struct
 {
@@ -85,7 +86,7 @@ int readable_timeo(int fd, int sec)
         /* >0 if descriptor is readable*/
 }
 
-int ShackHands(char *file_name, FILE **fp)
+int ShakeHands(char *file_name, FILE **fp)
 {
     // Fill in file name to filenamePacket
     Packet fnpack;
@@ -208,11 +209,11 @@ int main(int argc, char *argv[])
     
     char file_name[FILE_NAME_MAX_SIZE+1];
     bzero(file_name, FILE_NAME_MAX_SIZE+1);
-    printf("Please input File Name on Server: Bible.txt\n");
+    printf("Please input File Name on Server: \n");
     //scanf("%s",file_name);
-    strncpy(file_name,"Bible.txt",strlen("Bible.txt"));
+    strncpy(file_name,DEFAULT_FILE,strlen(DEFAULT_FILE));
     FILE *fp = NULL;
-    if (ShackHands(file_name, &fp)>0){
+    if (ShakeHands(file_name, &fp)>0){
         printf("Receving...\n"); 
         struct timeval start,finish;
         gettimeofday(&start,NULL);
